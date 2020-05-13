@@ -1,0 +1,174 @@
+Install kind
+
+$ curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.8.0/kind-$(uname)-amd64
+$ chmod +x ./kind
+$ mv ./kind /usr/local/bin/kind
+
+
+Put user in DOCKER group
+$ sudo usermod -aG docker ${USER}
+
+
+
+First step is to create a cluster using kind, specified by a config.yaml file 
+
+ 
+
+kind: Cluster 
+
+apiVersion: kind.x-k8s.io/v1alpha4 
+
+networking: 
+
+  disableDefaultCNI: true 
+
+nodes: 
+
+  - role: control-plane 
+
+  - role: worker 
+
+ 
+
+    One worker node and one master node 
+
+ 
+
+$ kind create cluster --config cluster-config.yaml
+
+ 
+
+Load docker image into cluster. 
+
+$ docker build -t iweb-lens:0.1 . 
+
+$ kind load docker-image iweb-lens:0.1 
+
+$ docker exec -it my-node-name crictl images ---> this verifies if docker image is loaded onto the node in the cluster 
+
+ 
+
+ 
+
+Next is to configure the cluster environment, following commands to be executed inside the node container 
+
+$ docker exec -it control-plane-node bash 
+
+ 
+
+Following commands installs required packages 
+
+ 
+
+$ apt-get update 
+
+$ apt-get install apt-file -y 
+
+$ apt-file update 
+
+$ apt-get install nano -y 
+
+$ apt-get install dbus -y 
+
+ 
+
+ 
+
+Now configure the node 
+
+ 
+
+$ kubeadm version 
+
+$ sudo hostnamectl set-hostname master-node 
+
+$ sudo hostnamectl status    ---> verify hostname has changed to master-node 
+
+$ sudo nano /etc/hosts 
+
+172.17.0.3 master-node 
+
+$ sudo swapoff -a 
+
+$ kubeadm reset 
+
+$ kubectl apply -f https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml       ---> try before initializing pod network
+
+$ kubeadm init --pod-network-cidr=10.244.0.0/16 --apiserver-advertise-address=172.17.0.3 --ignore-preflight-errors=all 
+
+ 
+
+NOTE: take note of the token and discovery token certificate 
+
+ 
+ 
+
+After initializing cluster, still inside the master node 
+
+ 
+
+$ mkdir -p $HOME/.kube 
+
+$ cp -i /etc/kubernetes/admin.conf $HOME/.kube/config 
+
+$ chown $(id -u):$(id -g) $HOME/.kube/config 
+
+$ kubectl cluster-info    ---> verifies that master-node is now running at its IP address 
+
+ 
+
+ 
+
+Install calico to enable networking in cluster DO NOT USE FLANNEL
+
+$ kubectl apply -f https://docs.projectcalico.org/v3.11/manifests/calico.yaml
+
+$ kubectl apply -f https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml 
+
+ 
+
+ 
+
+Go inside worker node 
+
+$ kubeadm reset 
+
+$ kubeadm join 172.17.0.3:6443 --token <token-from-above> --discovery-token-ca-cert-hash sha256:<hash-from-above> --ignore-preflight-errors=all 
+
+ 
+
+ 
+
+Now go inside master node 
+
+ 
+
+$ kubectl get nodes -o wide 
+
+ 
+
+    This verifies that worker node has joined cluster 
+
+    Worker node should be in ready state 
+
+    $ kubectl get nodes -o wide 
+
+ 
+
+ 
+
+Now create a namespace 
+
+ 
+
+$ kubectl create namespace sraj50 
+
+ 
+
+ 
+
+NOTE: 
+
+    reCreate cluster with disabling default CNI, then use flannel cni for networking 
+
+ 
